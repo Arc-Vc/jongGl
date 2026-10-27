@@ -1,5 +1,5 @@
 
-name: Copy Alpha Alucard Angela
+name: Copy Alpha and Alucard
 
 on:
   workflow_dispatch:
@@ -27,7 +27,7 @@ jobs:
           git -C source-repo sparse-checkout init --cone
 
           git -C source-repo sparse-checkout set \
-            Alpha Alucard Angela
+            Alpha Alucard
 
           git -C source-repo checkout
 
@@ -38,7 +38,7 @@ jobs:
           import sys
           from pathlib import Path
 
-          heroes = ["Alpha", "Alucard", "Angela"]
+          heroes = ["Alpha", "Alucard"]
           source_root = Path("source-repo")
           max_file = 100 * 1024 * 1024
           max_batch = int(1.5 * 1024 * 1024 * 1024)
@@ -67,12 +67,15 @@ jobs:
                           total += size
 
           if not found:
-              sys.exit("None of the selected folders were found.")
+              sys.exit("No selected folders were found.")
 
           print(f"Eligible batch size: {total / (1024**3):.2f} GiB")
 
           if total > max_batch:
-              sys.exit("Batch exceeds 1.5 GiB. Split into smaller batches.")
+              sys.exit(
+                  "Batch exceeds 1.5 GiB. "
+                  "Copy a smaller folder in another run."
+              )
 
           for hero in found:
               source = source_root / hero
@@ -94,6 +97,7 @@ jobs:
               for path in destination.rglob("*"):
                   if path.is_symlink() or not path.is_file():
                       continue
+
                   if path.stat().st_size >= max_file:
                       print("Removing oversized file:", path)
                       path.unlink()
@@ -108,11 +112,11 @@ jobs:
           git config user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -A -- Alpha Alucard Angela
+          git add -A -- Alpha Alucard
 
           if ! git diff --cached --quiet; then
-            git commit -m "Copy Alpha Alucard Angela folders"
+            git commit -m "Copy Alpha and Alucard folders"
             git push
           else
-            echo "No new changes to commit."
+            echo "No changes to commit."
           fi
