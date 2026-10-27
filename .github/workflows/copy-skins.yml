@@ -1,5 +1,5 @@
 
-name: Copy Chou Street Fighter 1
+name: Copy Chou Street Fighter 2
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
       - name: Checkout my repository
         uses: actions/checkout@v4
 
-      - name: Download Street Fighter 1 folder
+      - name: Download Street Fighter 2 folder
         run: |
           git clone \
             --depth 1 \
@@ -25,7 +25,7 @@ jobs:
             source-repo
 
           git -C source-repo sparse-checkout init --cone
-          git -C source-repo sparse-checkout set "Chou/Street Fighter 1"
+          git -C source-repo sparse-checkout set "Chou/Street Fighter 2"
           git -C source-repo checkout
 
       - name: Copy folder into my repository
@@ -35,11 +35,11 @@ jobs:
           import sys
           from pathlib import Path
 
-          source = Path("source-repo/Chou/Street Fighter 1")
-          destination = Path("Chou/Street Fighter 1")
+          source = Path("source-repo/Chou/Street Fighter 2")
+          destination = Path("Chou/Street Fighter 2")
 
           if not source.is_dir():
-              sys.exit("Source folder Chou/Street Fighter 1 was not found.")
+              sys.exit("Source folder Chou/Street Fighter 2 was not found.")
 
           destination.mkdir(parents=True, exist_ok=True)
 
@@ -50,7 +50,7 @@ jobs:
               ignore=shutil.ignore_patterns(".git")
           )
 
-          print("Street Fighter 1 copied successfully.")
+          print("Street Fighter 2 copied successfully.")
           PY
 
       - name: Check file sizes
@@ -59,7 +59,7 @@ jobs:
           import sys
           from pathlib import Path
 
-          folder = Path("Chou/Street Fighter 1")
+          folder = Path("Chou/Street Fighter 2")
           total = 0
           limit = 100 * 1024 * 1024
 
@@ -84,10 +84,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -A -- "Chou/Street Fighter 1"
+          git add -A -- "Chou/Street Fighter 2"
 
           if ! git diff --cached --quiet; then
-            git commit -m "Copy Chou Street Fighter 1 folder"
+            git commit -m "Copy Chou Street Fighter 2 folder"
             git push
           else
             echo "No new changes to commit."
