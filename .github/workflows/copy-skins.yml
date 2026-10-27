@@ -1,5 +1,5 @@
 
-name: Copy Chou Luckybox
+name: Copy Chou STUN
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
       - name: Checkout my repository
         uses: actions/checkout@v4
 
-      - name: Download Luckybox folder
+      - name: Download STUN folder
         run: |
           git clone \
             --depth 1 \
@@ -25,21 +25,21 @@ jobs:
             source-repo
 
           git -C source-repo sparse-checkout init --cone
-          git -C source-repo sparse-checkout set "Chou/Luckybox"
+          git -C source-repo sparse-checkout set "Chou/STUN"
           git -C source-repo checkout
 
-      - name: Copy Luckybox into my repository
+      - name: Copy STUN into my repository
         run: |
           python - <<'PY'
           import shutil
           import sys
           from pathlib import Path
 
-          source = Path("source-repo/Chou/Luckybox")
-          destination = Path("Chou/Luckybox")
+          source = Path("source-repo/Chou/STUN")
+          destination = Path("Chou/STUN")
 
           if not source.is_dir():
-              sys.exit("Source folder Chou/Luckybox was not found.")
+              sys.exit("Source folder Chou/STUN was not found.")
 
           destination.mkdir(parents=True, exist_ok=True)
 
@@ -50,7 +50,7 @@ jobs:
               ignore=shutil.ignore_patterns(".git")
           )
 
-          print("Luckybox copied successfully.")
+          print("Copied Chou/STUN and its nested files.")
           PY
 
       - name: Check file sizes
@@ -59,7 +59,7 @@ jobs:
           import sys
           from pathlib import Path
 
-          folder = Path("Chou/Luckybox")
+          folder = Path("Chou/STUN")
           total = 0
           limit = 100 * 1024 * 1024
 
@@ -73,7 +73,7 @@ jobs:
               if size >= limit:
                   sys.exit(f"File exceeds 100 MiB: {path}")
 
-          print(f"Folder size: {total / (1024**3):.2f} GiB")
+          print(f"Total folder size: {total / (1024**3):.2f} GiB")
 
           if total > int(1.5 * 1024**3):
               sys.exit("Folder exceeds the 1.5 GiB safety limit.")
@@ -84,10 +84,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -A -- "Chou/Luckybox"
+          git add -A -- "Chou/STUN"
 
           if ! git diff --cached --quiet; then
-            git commit -m "Copy Chou Luckybox folder"
+            git commit -m "Copy Chou STUN folder"
             git push
           else
             echo "No new changes to commit."
