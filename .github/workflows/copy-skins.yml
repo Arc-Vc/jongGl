@@ -1,5 +1,5 @@
 
-name: Copy Brody Bruno Carmilla
+name: Copy Cecilion Change Chou
 
 on:
   workflow_dispatch:
@@ -27,7 +27,7 @@ jobs:
           git -C source-repo sparse-checkout init --cone
 
           git -C source-repo sparse-checkout set \
-            Brody Bruno Carmilla
+            Cecilion "Chang'e" Chou
 
           git -C source-repo checkout
 
@@ -38,7 +38,7 @@ jobs:
           import sys
           from pathlib import Path
 
-          heroes = ["Brody", "Bruno", "Carmilla"]
+          heroes = ["Cecilion", "Chang'e", "Chou"]
           source_root = Path("source-repo")
           max_file = 100 * 1024 * 1024
           max_batch = int(1.5 * 1024 * 1024 * 1024)
@@ -112,10 +112,10 @@ jobs:
           git config user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -A -- Brody Bruno Carmilla
+          git add -A -- Cecilion "Chang'e" Chou
 
           if ! git diff --cached --quiet; then
-            git commit -m "Copy Brody Bruno Carmilla folders"
+            git commit -m "Copy Cecilion Change Chou folders"
             git push
           else
             echo "No changes to commit."
