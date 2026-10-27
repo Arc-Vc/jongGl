@@ -1,5 +1,5 @@
 
-name: Copy Alpha and Alucard
+name: Copy Angela Argus Arlott
 
 on:
   workflow_dispatch:
@@ -27,7 +27,7 @@ jobs:
           git -C source-repo sparse-checkout init --cone
 
           git -C source-repo sparse-checkout set \
-            Alpha Alucard
+            Angela Argus Arlott
 
           git -C source-repo checkout
 
@@ -38,7 +38,7 @@ jobs:
           import sys
           from pathlib import Path
 
-          heroes = ["Alpha", "Alucard"]
+          heroes = ["Angela", "Argus", "Arlott"]
           source_root = Path("source-repo")
           max_file = 100 * 1024 * 1024
           max_batch = int(1.5 * 1024 * 1024 * 1024)
@@ -61,6 +61,7 @@ jobs:
 
                   if path.is_file():
                       size = path.stat().st_size
+
                       if size >= max_file:
                           print("SKIPPING oversized file:", path)
                       else:
@@ -74,7 +75,7 @@ jobs:
           if total > max_batch:
               sys.exit(
                   "Batch exceeds 1.5 GiB. "
-                  "Copy a smaller folder in another run."
+                  "Split into smaller batches."
               )
 
           for hero in found:
@@ -112,10 +113,10 @@ jobs:
           git config user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -A -- Alpha Alucard
+          git add -A -- Angela Argus Arlott
 
           if ! git diff --cached --quiet; then
-            git commit -m "Copy Alpha and Alucard folders"
+            git commit -m "Copy Angela Argus Arlott folders"
             git push
           else
             echo "No changes to commit."
