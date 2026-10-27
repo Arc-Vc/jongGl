@@ -1,5 +1,5 @@
 
-name: Copy Balmond Bane Beatrix
+name: Copy Belerick Benedetta Brody Bruno
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
       - name: Checkout destination repository
         uses: actions/checkout@v4
 
-      - name: Download selected source folders
+      - name: Download selected hero folders
         run: |
           git clone \
             --depth 1 \
@@ -27,7 +27,7 @@ jobs:
           git -C source-repo sparse-checkout init --cone
 
           git -C source-repo sparse-checkout set \
-            Balmond Bane Beatrix
+            Belerick Benedetta Brody Bruno
 
           git -C source-repo checkout
 
@@ -38,7 +38,7 @@ jobs:
           import sys
           from pathlib import Path
 
-          heroes = ["Balmond", "Bane", "Beatrix"]
+          heroes = ["Belerick", "Benedetta", "Brody", "Bruno"]
           source_root = Path("source-repo")
           max_file = 100 * 1024 * 1024
           max_batch = int(1.5 * 1024 * 1024 * 1024)
@@ -61,22 +61,18 @@ jobs:
 
                   if path.is_file():
                       size = path.stat().st_size
-
                       if size >= max_file:
                           print("SKIPPING oversized file:", path)
                       else:
                           total += size
 
           if not found:
-              sys.exit("No selected folders were found.")
+              sys.exit("No selected hero folders were found.")
 
           print(f"Eligible batch size: {total / (1024**3):.2f} GiB")
 
           if total > max_batch:
-              sys.exit(
-                  "Batch exceeds 1.5 GiB. "
-                  "Copy fewer folders in another run."
-              )
+              sys.exit("Batch exceeds 1.5 GiB. Split into smaller batches.")
 
           for hero in found:
               source = source_root / hero
@@ -113,10 +109,10 @@ jobs:
           git config user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -A -- Balmond Bane Beatrix
+          git add -A -- Belerick Benedetta Brody Bruno
 
           if ! git diff --cached --quiet; then
-            git commit -m "Copy Balmond Bane Beatrix folders"
+            git commit -m "Copy Belerick Benedetta Brody Bruno folders"
             git push
           else
             echo "No changes to commit."
