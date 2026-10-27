@@ -1,5 +1,5 @@
 
-name: Copy Chou Libra Shiryu
+name: Copy Chou Luckybox
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
       - name: Checkout my repository
         uses: actions/checkout@v4
 
-      - name: Download Libra Shiryu folder
+      - name: Download Luckybox folder
         run: |
           git clone \
             --depth 1 \
@@ -25,21 +25,21 @@ jobs:
             source-repo
 
           git -C source-repo sparse-checkout init --cone
-          git -C source-repo sparse-checkout set "Chou/Libra Shiryu"
+          git -C source-repo sparse-checkout set "Chou/Luckybox"
           git -C source-repo checkout
 
-      - name: Copy folder into my repository
+      - name: Copy Luckybox into my repository
         run: |
           python - <<'PY'
           import shutil
           import sys
           from pathlib import Path
 
-          source = Path("source-repo/Chou/Libra Shiryu")
-          destination = Path("Chou/Libra Shiryu")
+          source = Path("source-repo/Chou/Luckybox")
+          destination = Path("Chou/Luckybox")
 
           if not source.is_dir():
-              sys.exit("Source folder Chou/Libra Shiryu was not found.")
+              sys.exit("Source folder Chou/Luckybox was not found.")
 
           destination.mkdir(parents=True, exist_ok=True)
 
@@ -50,7 +50,7 @@ jobs:
               ignore=shutil.ignore_patterns(".git")
           )
 
-          print("Libra Shiryu copied successfully.")
+          print("Luckybox copied successfully.")
           PY
 
       - name: Check file sizes
@@ -59,7 +59,7 @@ jobs:
           import sys
           from pathlib import Path
 
-          folder = Path("Chou/Libra Shiryu")
+          folder = Path("Chou/Luckybox")
           total = 0
           limit = 100 * 1024 * 1024
 
@@ -73,11 +73,10 @@ jobs:
               if size >= limit:
                   sys.exit(f"File exceeds 100 MiB: {path}")
 
-          print(f"Total folder size: {total / (1024**3):.2f} GiB")
+          print(f"Folder size: {total / (1024**3):.2f} GiB")
 
           if total > int(1.5 * 1024**3):
               sys.exit("Folder exceeds the 1.5 GiB safety limit.")
-
           PY
 
       - name: Commit and push files
@@ -85,10 +84,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -A -- "Chou/Libra Shiryu"
+          git add -A -- "Chou/Luckybox"
 
           if ! git diff --cached --quiet; then
-            git commit -m "Copy Chou Libra Shiryu folder"
+            git commit -m "Copy Chou Luckybox folder"
             git push
           else
             echo "No new changes to commit."
