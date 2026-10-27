@@ -1,13 +1,8 @@
 
-name: Copy Folder Recursively
+name: Copy Selected MLBB Heroes
 
 on:
   workflow_dispatch:
-    inputs:
-      folder:
-        description: "Source folder, e.g. Aamon or Aamon/Collector"
-        required: true
-        default: "Aamon/Collector"
 
 permissions:
   contents: write
@@ -20,29 +15,8 @@ jobs:
       - name: Checkout destination repository
         uses: actions/checkout@v4
 
-      - name: Validate folder and clone source
-        env:
-          FOLDER: ${{ inputs.folder }}
+      - name: Clone selected hero folders
         run: |
-          python - <<'PY'
-          import os
-          import sys
-
-          folder = os.environ.get("FOLDER", "")
-
-          if (
-              not folder
-              or folder.startswith("/")
-              or folder.endswith("/")
-              or "\\" in folder
-              or any(part in ("", ".", "..")
-                     for part in folder.split("/"))
-          ):
-              sys.exit("Invalid folder path.")
-
-          print("Selected folder:", folder)
-          PY
-
           git clone \
             --depth 1 \
             --filter=blob:none \
@@ -52,109 +26,96 @@ jobs:
 
           git -C source-repo sparse-checkout init --cone
 
-          git -C source-repo sparse-checkout set "$FOLDER"
+          git -C source-repo sparse-checkout set \
+            Akai Aldous Alice Alpha Alucard
 
           git -C source-repo checkout
 
-          if [ ! -d "source-repo/$FOLDER" ]; then
-            echo "Source folder was not found."
-            exit 1
-          fi
-
-      - name: Copy files and nested folders
-        env:
-          FOLDER: ${{ inputs.folder }}
+      - name: Copy all files and nested folders
         run: |
           python - <<'PY'
-          import os
-          import sys
           import shutil
           from pathlib import Path
 
-          folder = Path(os.environ["FOLDER"])
-          source = Path("source-repo") / folder
-          destination = folder
+          heroes = [
+              "Akai",
+              "Aldous",
+              "Alice",
+              "Alpha",
+              "Alucard",
+          ]
 
-          if not source.is_dir():
-              sys.exit("Source directory does not exist.")
+          source_root = Path("source-repo")
 
-          files = []
-          directories = []
-          total_bytes = 0
-          skipped_large = 0
-          skipped_links = 0
+          for hero in heroes:
+              source = source_root / hero
+              destination = Path(hero)
 
-          for path in source.rglob("*"):
-              if path.is_symlink():
-                  skipped_links += 1
-                  print("SKIPPED symbolic link:", path)
+              if not source.is_dir():
+                  print(f"NOT FOUND: {hero}")
                   continue
 
-              if path.is_dir():
-                  directories.append(path)
-                  continue
-
-              if not path.is_file():
-                  continue
-
-              size = path.stat().st_size
-
-              if size >= 100_000_000:
-                  skipped_large += 1
-                  print("SKIPPED file >= 100 MB:", path)
-                  continue
-
-              files.append(path)
-              total_bytes += size
-
-          # Leave room below GitHub's per-push limit.
-          if total_bytes > 1_500_000_000:
-              sys.exit(
-                  "Selected folder exceeds the 1.5 GB copy limit. "
-                  "Choose a smaller subfolder."
+              shutil.copytree(
+                  source,
+                  destination,
+                  dirs_exist_ok=True,
+                  ignore=shutil.ignore_patterns(".git")
               )
 
-          destination.mkdir(parents=True, exist_ok=True)
+              print(f"COPIED: {hero}")
 
-          # Recreate all non-empty source directories.
-          for path in directories:
-              relative = path.relative_to(source)
-              (destination / relative).mkdir(
-                  parents=True, exist_ok=True
-              )
-
-          # Copy each eligible file and retain its relative path.
-          copied = 0
-
-          for path in files:
-              relative = path.relative_to(source)
-              target = destination / relative
-
-              target.parent.mkdir(parents=True, exist_ok=True)
-              shutil.copy2(path, target)
-
-              copied += 1
-              print("COPIED:", target)
-
-          print()
-          print("Files copied:", copied)
-          print("Files skipped for size:", skipped_large)
-          print("Symbolic links skipped:", skipped_links)
-          print("Total copied bytes:", total_bytes)
           PY
 
-      - name: Commit copied files
-        env:
-          FOLDER: ${{ inputs.folder }}
+      - name: Check repository size before commit
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import sys
+
+          heroes = ["Akai", "Aldous", "Alice", "Alpha", "Alucard"]
+          total = 0
+          oversized = []
+
+          for hero in heroes:
+              folder = Path(hero)
+
+              if not folder.exists():
+                  continue
+
+              for path in folder.rglob("*"):
+                  if path.is_symlink() or not path.is_file():
+                      continue
+
+                  size = path.stat().st_size
+                  total += size
+
+                  if size >= 100_000_000:
+                      oversized.append(str(path))
+
+          if oversized:
+              print("Files over GitHub's 100 MB limit:")
+              for path in oversized:
+                  print(path)
+              sys.exit("Remove or separately host oversized files.")
+
+          print(f"Total selected files: {total / 1e9:.2f} GB")
+
+          if total > 1_500_000_000:
+              sys.exit(
+                  "Batch exceeds 1.5 GB. Copy fewer heroes per run."
+              )
+          PY
+
+      - name: Commit copied heroes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -A -- "$FOLDER"
+          git add -A -- Akai Aldous Alice Alpha Alucard
 
           if ! git diff --cached --quiet; then
-            git commit -m "Copy selected folder recursively"
+            git commit -m "Copy selected MLBB hero folders"
             git push
           else
             echo "No changes to commit."
