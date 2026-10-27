@@ -1,5 +1,5 @@
 
-name: Copy Chou in Batches
+name: Copy Chou KOF Folder
 
 on:
   workflow_dispatch:
@@ -12,10 +12,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout destination repository
+      - name: Checkout my repository
         uses: actions/checkout@v4
 
-      - name: Fetch Chou folder
+      - name: Download Chou KOF from source
         run: |
           git clone \
             --depth 1 \
@@ -25,147 +25,78 @@ jobs:
             source-repo
 
           git -C source-repo sparse-checkout init --cone
-          git -C source-repo sparse-checkout set Chou
+
+          git -C source-repo sparse-checkout set Chou/KOF
+
           git -C source-repo checkout
 
-      - name: Build small batches
+      - name: Copy KOF into existing Chou folder
         run: |
           python - <<'PY'
-          import os
           import shutil
-          import subprocess
           import sys
           from pathlib import Path
 
-          source = Path("source-repo/Chou")
+          source = Path("source-repo/Chou/KOF")
+          destination = Path("Chou/KOF")
+
           if not source.is_dir():
-              sys.exit("Chou folder not found.")
+              sys.exit("Source folder Chou/KOF was not found.")
 
-          limit = 700 * 1024 * 1024
+          destination.mkdir(parents=True, exist_ok=True)
+
+          shutil.copytree(
+              source,
+              destination,
+              dirs_exist_ok=True,
+              ignore=shutil.ignore_patterns(".git")
+          )
+
+          print("Copied Chou/KOF and its nested files.")
+          PY
+
+      - name: Check file sizes
+        run: |
+          python - <<'PY'
+          import sys
+          from pathlib import Path
+
+          folder = Path("Chou/KOF")
           max_file = 100 * 1024 * 1024
-          files = []
-          skipped = 0
+          total = 0
 
-          for path in sorted(source.rglob("*")):
+          for path in folder.rglob("*"):
               if path.is_symlink() or not path.is_file():
                   continue
 
               size = path.stat().st_size
+              total += size
+
               if size >= max_file:
-                  print("SKIPPED oversized file:", path)
-                  skipped += 1
-                  continue
+                  sys.exit(
+                      f"File exceeds GitHub's regular Git limit: {path}"
+                  )
 
-              files.append((path, size))
+          print(f"KOF folder size: {total / (1024**3):.2f} GiB")
 
-          batches = []
-          current = []
-          total = 0
-
-          for path, size in files:
-              if current and total + size > limit:
-                  batches.append(current)
-                  current = []
-                  total = 0
-
-              current.append((path, size))
-              total += size
-
-          if current:
-              batches.append(current)
-
-          print("Files eligible:", len(files))
-          print("Files skipped:", skipped)
-          print("Batches:", len(batches))
-
-          # Store batch lists for the next workflow step.
-          os.makedirs("batch-data", exist_ok=True)
-
-          import json
-          with open("batch-data/manifest.json", "w") as f:
-              json.dump(
-                  [[str(p.relative_to(source)), size]
-                   for batch in batches
-                   for p, size in batch],
-                  f
+          if total > int(1.5 * 1024 * 1024 * 1024):
+              sys.exit(
+                  "KOF is over 1.5 GiB. Use a smaller batch or "
+                  "external storage."
               )
-
-          with open("batch-data/count.txt", "w") as f:
-              f.write(str(len(batches)))
           PY
 
-      - name: Copy and push batches
+      - name: Commit KOF files
         run: |
-          python - <<'PY'
-          import json
-          import subprocess
-          import sys
-          from pathlib import Path
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
 
-          source = Path("source-repo/Chou")
-          destination = Path("Chou")
-          manifest = json.loads(
-              Path("batch-data/manifest.json").read_text()
-          )
+          git add -A -- Chou/KOF
 
-          limit = 700 * 1024 * 1024
-          batch = []
-          total = 0
-          batches = []
-
-          for relative, size in manifest:
-              if batch and total + size > limit:
-                  batches.append(batch)
-                  batch = []
-                  total = 0
-
-              batch.append((relative, size))
-              total += size
-
-          if batch:
-              batches.append(batch)
-
-          if not batches:
-              sys.exit("No eligible files to copy.")
-
-          subprocess.run(
-              ["git", "config", "user.name", "github-actions[bot]"],
-              check=True
-          )
-          subprocess.run(
-              ["git", "config", "user.email",
-               "41898282+github-actions[bot]@users.noreply.github.com"],
-              check=True
-          )
-
-          for number, items in enumerate(batches, start=1):
-              print(f"Processing batch {number}/{len(batches)}")
-
-              for relative, size in items:
-                  src = source / relative
-                  dst = destination / relative
-                  dst.parent.mkdir(parents=True, exist_ok=True)
-                  shutil.copy2(src, dst)
-
-              subprocess.run(
-                  ["git", "add", "-A", "--", "Chou/"],
-                  check=True
-              )
-
-              result = subprocess.run(
-                  ["git", "diff", "--cached", "--quiet"]
-              )
-
-              if result.returncode == 0:
-                  print("No changes in this batch.")
-                  continue
-
-              subprocess.run(
-                  ["git", "commit", "-m",
-                   f"Copy Chou files batch {number}"],
-                  check=True
-              )
-              subprocess.run(["git", "push"], check=True)
-
-          print("Finished processing Chou batches.")
-          PY
+          if ! git diff --cached --quiet; then
+            git commit -m "Copy Chou KOF folder"
+            git push
+          else
+            echo "No new changes to commit."
+          fi
