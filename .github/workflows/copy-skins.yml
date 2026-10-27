@@ -1,5 +1,5 @@
 
-name: Copy Chou and Cici
+name: Copy Chou
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
       - name: Checkout destination repository
         uses: actions/checkout@v4
 
-      - name: Download selected source folders
+      - name: Download Chou source folder
         run: |
           git clone \
             --depth 1 \
@@ -25,10 +25,7 @@ jobs:
             source-repo
 
           git -C source-repo sparse-checkout init --cone
-
-          git -C source-repo sparse-checkout set \
-            Chou Cici
-
+          git -C source-repo sparse-checkout set Chou
           git -C source-repo checkout
 
       - name: Check size and copy files
@@ -38,81 +35,66 @@ jobs:
           import sys
           from pathlib import Path
 
-          heroes = ["Chou", "Cici"]
-          source_root = Path("source-repo")
+          source = Path("source-repo/Chou")
+          destination = Path("Chou")
           max_file = 100 * 1024 * 1024
           max_batch = int(1.5 * 1024 * 1024 * 1024)
 
-          found = []
+          if not source.is_dir():
+              sys.exit("Chou folder was not found in the source repository.")
+
           total = 0
 
-          for hero in heroes:
-              folder = source_root / hero
-
-              if not folder.is_dir():
-                  print("NOT FOUND:", hero)
+          for path in source.rglob("*"):
+              if path.is_symlink() or not path.is_file():
                   continue
 
-              found.append(hero)
+              size = path.stat().st_size
 
-              for path in folder.rglob("*"):
-                  if path.is_symlink():
-                      continue
+              if size >= max_file:
+                  print("SKIPPING oversized file:", path)
+              else:
+                  total += size
 
-                  if path.is_file():
-                      size = path.stat().st_size
-                      if size >= max_file:
-                          print("SKIPPING oversized file:", path)
-                      else:
-                          total += size
-
-          if not found:
-              sys.exit("No selected folders were found.")
-
-          print(f"Eligible batch size: {total / (1024**3):.2f} GiB")
+          print(f"Eligible batch: {total / (1024**3):.2f} GiB")
 
           if total > max_batch:
-              sys.exit("Batch exceeds 1.5 GiB. Split into smaller batches.")
+              sys.exit("Chou exceeds the 1.5 GiB batch limit.")
 
-          for hero in found:
-              source = source_root / hero
-              destination = Path(hero)
+          def ignore_links(directory, names):
+              return [
+                  name for name in names
+                  if (Path(directory) / name).is_symlink()
+              ]
 
-              def ignore_links(directory, names):
-                  return [
-                      name for name in names
-                      if (Path(directory) / name).is_symlink()
-                  ]
+          shutil.copytree(
+              source,
+              destination,
+              dirs_exist_ok=True,
+              ignore=ignore_links
+          )
 
-              shutil.copytree(
-                  source,
-                  destination,
-                  dirs_exist_ok=True,
-                  ignore=ignore_links
-              )
+          for path in destination.rglob("*"):
+              if path.is_symlink() or not path.is_file():
+                  continue
 
-              for path in destination.rglob("*"):
-                  if path.is_symlink() or not path.is_file():
-                      continue
+              if path.stat().st_size >= max_file:
+                  print("Removing oversized file:", path)
+                  path.unlink()
 
-                  if path.stat().st_size >= max_file:
-                      print("Removing oversized file:", path)
-                      path.unlink()
-
-              print("Copied:", hero)
-
+          print("Chou copied.")
           PY
 
-      - name: Commit copied files
+      - name: Commit Chou folder
         run: |
           git config user.name "github-actions[bot]"
           git config user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -A -- Chou Cici
+          git add -A -- Chou
 
           if ! git diff --cached --quiet; then
-            git commit -m "Copy Chou and Cici folders"
+            git commit -m "Copy Chou folder"
             git push
           else
             echo "No changes to commit."
