@@ -1,5 +1,5 @@
 
-name: Copy Selected MLBB Heroes
+name: Copy Akai Aldous Alice
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
       - name: Checkout destination repository
         uses: actions/checkout@v4
 
-      - name: Clone selected hero folders
+      - name: Download selected source folders
         run: |
           git clone \
             --depth 1 \
@@ -27,96 +27,99 @@ jobs:
           git -C source-repo sparse-checkout init --cone
 
           git -C source-repo sparse-checkout set \
-            Akai Aldous Alice Alpha Alucard
+            Akai Aldous Alice
 
           git -C source-repo checkout
 
-      - name: Copy all files and nested folders
+      - name: Check size and copy all files
         run: |
           python - <<'PY'
           import shutil
+          import sys
           from pathlib import Path
 
-          heroes = [
-              "Akai",
-              "Aldous",
-              "Alice",
-              "Alpha",
-              "Alucard",
-          ]
-
+          heroes = ["Akai", "Aldous", "Alice"]
           source_root = Path("source-repo")
+          max_file = 100 * 1024 * 1024
+          max_batch = int(1.5 * 1024 * 1024 * 1024)
+
+          found = []
+          total = 0
 
           for hero in heroes:
+              folder = source_root / hero
+
+              if not folder.is_dir():
+                  print("NOT FOUND:", hero)
+                  continue
+
+              found.append(hero)
+
+              for path in folder.rglob("*"):
+                  if path.is_symlink():
+                      print("Skipping symbolic link:", path)
+                      continue
+
+                  if path.is_file():
+                      size = path.stat().st_size
+
+                      if size >= max_file:
+                          print("SKIPPING file over limit:", path)
+                      else:
+                          total += size
+
+          if not found:
+              sys.exit("None of the selected hero folders were found.")
+
+          print(f"Eligible data size: {total / (1024**3):.2f} GiB")
+
+          if total > max_batch:
+              sys.exit(
+                  "Batch exceeds 1.5 GiB. "
+                  "Split the heroes into smaller batches."
+              )
+
+          for hero in found:
               source = source_root / hero
               destination = Path(hero)
 
-              if not source.is_dir():
-                  print(f"NOT FOUND: {hero}")
-                  continue
+              def ignore_links(directory, names):
+                  return [
+                      name for name in names
+                      if (Path(directory) / name).is_symlink()
+                  ]
 
               shutil.copytree(
                   source,
                   destination,
                   dirs_exist_ok=True,
-                  ignore=shutil.ignore_patterns(".git")
+                  ignore=ignore_links
               )
 
-              print(f"COPIED: {hero}")
-
-          PY
-
-      - name: Check repository size before commit
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import sys
-
-          heroes = ["Akai", "Aldous", "Alice", "Alpha", "Alucard"]
-          total = 0
-          oversized = []
-
-          for hero in heroes:
-              folder = Path(hero)
-
-              if not folder.exists():
-                  continue
-
-              for path in folder.rglob("*"):
+              # Remove oversized regular files from this batch.
+              for path in destination.rglob("*"):
                   if path.is_symlink() or not path.is_file():
                       continue
 
-                  size = path.stat().st_size
-                  total += size
+                  if path.stat().st_size >= max_file:
+                      print("Removing oversized file:", path)
+                      path.unlink()
 
-                  if size >= 100_000_000:
-                      oversized.append(str(path))
+              print("Copied:", hero)
 
-          if oversized:
-              print("Files over GitHub's 100 MB limit:")
-              for path in oversized:
-                  print(path)
-              sys.exit("Remove or separately host oversized files.")
-
-          print(f"Total selected files: {total / 1e9:.2f} GB")
-
-          if total > 1_500_000_000:
-              sys.exit(
-                  "Batch exceeds 1.5 GB. Copy fewer heroes per run."
-              )
           PY
 
-      - name: Commit copied heroes
+      - name: Commit copied files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -A -- Akai Aldous Alice Alpha Alucard
+          git add -A -- Akai Aldous Alice
 
           if ! git diff --cached --quiet; then
-            git commit -m "Copy selected MLBB hero folders"
+            git commit -m "Copy Akai Aldous and Alice folders"
             git push
           else
-            echo "No changes to commit."
+            echo "No new changes to commit."
           fi
