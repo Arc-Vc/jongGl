@@ -1,5 +1,5 @@
 
-name: Copy Chou Street Fighter 2
+name: Copy Cici and Claude
 
 on:
   workflow_dispatch:
@@ -12,10 +12,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout my repository
+      - name: Checkout destination repository
         uses: actions/checkout@v4
 
-      - name: Download Street Fighter 2 folder
+      - name: Download selected source folders
         run: |
           git clone \
             --depth 1 \
@@ -25,70 +25,99 @@ jobs:
             source-repo
 
           git -C source-repo sparse-checkout init --cone
-          git -C source-repo sparse-checkout set "Chou/Street Fighter 2"
+
+          git -C source-repo sparse-checkout set \
+            Cici Claude
+
           git -C source-repo checkout
 
-      - name: Copy folder into my repository
+      - name: Check size and copy files
         run: |
           python - <<'PY'
           import shutil
           import sys
           from pathlib import Path
 
-          source = Path("source-repo/Chou/Street Fighter 2")
-          destination = Path("Chou/Street Fighter 2")
+          heroes = ["Cici", "Claude"]
+          source_root = Path("source-repo")
+          max_file = 100 * 1024 * 1024
+          max_batch = int(1.5 * 1024 * 1024 * 1024)
 
-          if not source.is_dir():
-              sys.exit("Source folder Chou/Street Fighter 2 was not found.")
-
-          destination.mkdir(parents=True, exist_ok=True)
-
-          shutil.copytree(
-              source,
-              destination,
-              dirs_exist_ok=True,
-              ignore=shutil.ignore_patterns(".git")
-          )
-
-          print("Street Fighter 2 copied successfully.")
-          PY
-
-      - name: Check file sizes
-        run: |
-          python - <<'PY'
-          import sys
-          from pathlib import Path
-
-          folder = Path("Chou/Street Fighter 2")
+          found = []
           total = 0
-          limit = 100 * 1024 * 1024
 
-          for path in folder.rglob("*"):
-              if path.is_symlink() or not path.is_file():
+          for hero in heroes:
+              folder = source_root / hero
+
+              if not folder.is_dir():
+                  print("NOT FOUND:", hero)
                   continue
 
-              size = path.stat().st_size
-              total += size
+              found.append(hero)
 
-              if size >= limit:
-                  sys.exit(f"File exceeds 100 MiB: {path}")
+              for path in folder.rglob("*"):
+                  if path.is_symlink():
+                      continue
 
-          print(f"Total folder size: {total / (1024**3):.2f} GiB")
+                  if path.is_file():
+                      size = path.stat().st_size
+                      if size >= max_file:
+                          print("SKIPPING oversized file:", path)
+                      else:
+                          total += size
 
-          if total > int(1.5 * 1024**3):
-              sys.exit("Folder exceeds the 1.5 GiB safety limit.")
+          if not found:
+              sys.exit("No selected folders were found.")
+
+          print(f"Eligible batch size: {total / (1024**3):.2f} GiB")
+
+          if total > max_batch:
+              sys.exit(
+                  "Batch exceeds 1.5 GiB. "
+                  "Copy smaller folders in separate runs."
+              )
+
+          for hero in found:
+              source = source_root / hero
+              destination = Path(hero)
+
+              def ignore_links(directory, names):
+                  return [
+                      name for name in names
+                      if (Path(directory) / name).is_symlink()
+                  ]
+
+              shutil.copytree(
+                  source,
+                  destination,
+                  dirs_exist_ok=True,
+                  ignore=ignore_links
+              )
+
+              for path in destination.rglob("*"):
+                  if path.is_symlink() or not path.is_file():
+                      continue
+
+                  if path.stat().st_size >= max_file:
+                      print("Removing oversized file:", path)
+                      path.unlink()
+
+              print("Copied:", hero)
+
           PY
 
-      - name: Commit and push files
+      - name: Commit copied files
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -A -- "Chou/Street Fighter 2"
+          git add -A -- Cici Claude
 
           if ! git diff --cached --quiet; then
-            git commit -m "Copy Chou Street Fighter 2 folder"
+            git commit -m "Copy Cici and Claude folders"
             git push
           else
-            echo "No new changes to commit."
+            echo "No changes to commit."
           fi
+          
