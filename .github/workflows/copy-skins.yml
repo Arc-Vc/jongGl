@@ -1,11 +1,11 @@
 
-name: Copy Skin ZIPs
+name: Copy Folder Recursively
 
 on:
   workflow_dispatch:
     inputs:
       folder:
-        description: "Source folder"
+        description: "Source folder, e.g. Aamon or Aamon/Collector"
         required: true
         default: "Aamon/Collector"
 
@@ -15,81 +15,147 @@ permissions:
 jobs:
   copy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout destination repository
         uses: actions/checkout@v4
 
-      - name: Download ZIP files
+      - name: Validate folder and clone source
         env:
           FOLDER: ${{ inputs.folder }}
         run: |
           python - <<'PY'
           import os
-          import json
-          import urllib.request
-          import pathlib
+          import sys
 
-          folder = os.environ["FOLDER"].strip("/")
+          folder = os.environ.get("FOLDER", "")
 
-          if ".." in folder.split("/"):
-              raise SystemExit("Invalid folder path")
+          if (
+              not folder
+              or folder.startswith("/")
+              or folder.endswith("/")
+              or "\\" in folder
+              or any(part in ("", ".", "..")
+                     for part in folder.split("/"))
+          ):
+              sys.exit("Invalid folder path.")
 
-          api = (
-              "https://api.github.com/repos/injctr/large/contents/"
-              + folder + "?ref=main"
-          )
+          print("Selected folder:", folder)
+          PY
 
-          req = urllib.request.Request(
-              api, headers={"User-Agent": "ARC-Skin-Copier"}
-          )
+          git clone \
+            --depth 1 \
+            --filter=blob:none \
+            --no-checkout \
+            https://github.com/injctr/large.git \
+            source-repo
 
-          with urllib.request.urlopen(req) as response:
-              items = json.load(response)
+          git -C source-repo sparse-checkout init --cone
 
-          if not isinstance(items, list):
-              raise SystemExit("Folder not found. Check the path.")
+          git -C source-repo sparse-checkout set "$FOLDER"
 
-          zips = [
-              item for item in items
-              if item["type"] == "file"
-              and item["name"].lower().endswith(".zip")
-          ]
+          git -C source-repo checkout
 
-          if not zips:
-              raise SystemExit("No ZIP files found in this folder.")
+          if [ ! -d "source-repo/$FOLDER" ]; then
+            echo "Source folder was not found."
+            exit 1
+          fi
 
-          for item in zips:
-              if item["size"] >= 100_000_000:
-                  print("Skipped file over 100 MB:", item["name"])
+      - name: Copy files and nested folders
+        env:
+          FOLDER: ${{ inputs.folder }}
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          import shutil
+          from pathlib import Path
+
+          folder = Path(os.environ["FOLDER"])
+          source = Path("source-repo") / folder
+          destination = folder
+
+          if not source.is_dir():
+              sys.exit("Source directory does not exist.")
+
+          files = []
+          directories = []
+          total_bytes = 0
+          skipped_large = 0
+          skipped_links = 0
+
+          for path in source.rglob("*"):
+              if path.is_symlink():
+                  skipped_links += 1
+                  print("SKIPPED symbolic link:", path)
                   continue
 
-              destination = (
-                  pathlib.Path("skins") / folder / item["name"]
+              if path.is_dir():
+                  directories.append(path)
+                  continue
+
+              if not path.is_file():
+                  continue
+
+              size = path.stat().st_size
+
+              if size >= 100_000_000:
+                  skipped_large += 1
+                  print("SKIPPED file >= 100 MB:", path)
+                  continue
+
+              files.append(path)
+              total_bytes += size
+
+          # Leave room below GitHub's per-push limit.
+          if total_bytes > 1_500_000_000:
+              sys.exit(
+                  "Selected folder exceeds the 1.5 GB copy limit. "
+                  "Choose a smaller subfolder."
               )
-              destination.parent.mkdir(
+
+          destination.mkdir(parents=True, exist_ok=True)
+
+          # Recreate all non-empty source directories.
+          for path in directories:
+              relative = path.relative_to(source)
+              (destination / relative).mkdir(
                   parents=True, exist_ok=True
               )
 
-              request = urllib.request.Request(
-                  item["download_url"],
-                  headers={"User-Agent": "ARC-Skin-Copier"}
-              )
+          # Copy each eligible file and retain its relative path.
+          copied = 0
 
-              with urllib.request.urlopen(request) as response:
-                  destination.write_bytes(response.read())
+          for path in files:
+              relative = path.relative_to(source)
+              target = destination / relative
 
-              print("Downloaded:", destination)
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(path, target)
 
+              copied += 1
+              print("COPIED:", target)
+
+          print()
+          print("Files copied:", copied)
+          print("Files skipped for size:", skipped_large)
+          print("Symbolic links skipped:", skipped_links)
+          print("Total copied bytes:", total_bytes)
           PY
 
-      - name: Commit files to my repository
+      - name: Commit copied files
+        env:
+          FOLDER: ${{ inputs.folder }}
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add skins/
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A -- "$FOLDER"
+
           if ! git diff --cached --quiet; then
-            git commit -m "Copy selected skin ZIPs"
+            git commit -m "Copy selected folder recursively"
             git push
           else
-            echo "No new files to commit."
+            echo "No changes to commit."
           fi
