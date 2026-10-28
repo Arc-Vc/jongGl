@@ -1,5 +1,5 @@
 
-name: Copy Diggie and Dyrroth
+name: Copy Edith and Esmeralda
 
 on:
   workflow_dispatch:
@@ -27,7 +27,7 @@ jobs:
           git -C source-repo sparse-checkout init --cone
 
           git -C source-repo sparse-checkout set \
-            Diggie Dyrroth
+            Edith Esmeralda
 
           git -C source-repo checkout
 
@@ -38,7 +38,7 @@ jobs:
           import sys
           from pathlib import Path
 
-          heroes = ["Diggie", "Dyrroth"]
+          heroes = ["Edith", "Esmeralda"]
           source_root = Path("source-repo")
           max_file = 100 * 1024 * 1024
           max_batch = int(1.5 * 1024 * 1024 * 1024)
@@ -72,7 +72,7 @@ jobs:
           print(f"Eligible batch size: {total / (1024**3):.2f} GiB")
 
           if total > max_batch:
-              sys.exit("Batch exceeds 1.5 GiB. Copy fewer files per run.")
+              sys.exit("Batch exceeds 1.5 GiB. Use smaller batches.")
 
           for hero in found:
               source = source_root / hero
@@ -109,10 +109,10 @@ jobs:
           git config user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -A -- Diggie Dyrroth
+          git add -A -- Edith Esmeralda
 
           if ! git diff --cached --quiet; then
-            git commit -m "Copy Diggie and Dyrroth folders"
+            git commit -m "Copy Edith and Esmeralda folders"
             git push
           else
             echo "No changes to commit."
