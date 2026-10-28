@@ -1,8 +1,14 @@
 
-name: Copy Edith and Esmeralda
+name: Copy Selected MLBB Heroes
 
 on:
   workflow_dispatch:
+    inputs:
+      heroes:
+        description: "Hero folder names separated by spaces"
+        required: true
+        default: "Estes Eudora"
+        type: string
 
 permissions:
   contents: write
@@ -15,7 +21,36 @@ jobs:
       - name: Checkout destination repository
         uses: actions/checkout@v4
 
-      - name: Download selected source folders
+      - name: Validate hero names
+        env:
+          HERO_INPUT: ${{ inputs.heroes }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          heroes = os.environ["HERO_INPUT"].split()
+
+          if not heroes:
+              sys.exit("Enter at least one hero name.")
+
+          if len(heroes) != len(set(heroes)):
+              sys.exit("Remove duplicate hero names.")
+
+          for hero in heroes:
+              if not re.fullmatch(r"[A-Za-z0-9.'-]+", hero):
+                  sys.exit(f"Invalid hero folder name: {hero}")
+
+          Path("/tmp/hero-list.txt").write_text(
+              "\n".join(heroes) + "\n"
+          )
+
+          print("Selected heroes:", ", ".join(heroes))
+          PY
+
+      - name: Get selected source folders
         run: |
           git clone \
             --depth 1 \
@@ -27,18 +62,18 @@ jobs:
           git -C source-repo sparse-checkout init --cone
 
           git -C source-repo sparse-checkout set \
-            Edith Esmeralda
+            --stdin < /tmp/hero-list.txt
 
           git -C source-repo checkout
 
-      - name: Check size and copy files
+      - name: Check sizes and copy folders
         run: |
           python - <<'PY'
           import shutil
           import sys
           from pathlib import Path
 
-          heroes = ["Edith", "Esmeralda"]
+          heroes = Path("/tmp/hero-list.txt").read_text().splitlines()
           source_root = Path("source-repo")
           max_file = 100 * 1024 * 1024
           max_batch = int(1.5 * 1024 * 1024 * 1024)
@@ -56,63 +91,65 @@ jobs:
               found.append(hero)
 
               for path in folder.rglob("*"):
-                  if path.is_symlink():
+                  if path.is_symlink() or not path.is_file():
                       continue
 
-                  if path.is_file():
-                      size = path.stat().st_size
-                      if size >= max_file:
-                          print("SKIPPING oversized file:", path)
-                      else:
-                          total += size
+                  size = path.stat().st_size
+
+                  if size >= max_file:
+                      print("WILL SKIP oversized file:", path)
+                  else:
+                      total += size
 
           if not found:
-              sys.exit("No selected folders were found.")
+              sys.exit("No matching hero folders were found.")
 
           print(f"Eligible batch size: {total / (1024**3):.2f} GiB")
 
           if total > max_batch:
-              sys.exit("Batch exceeds 1.5 GiB. Use smaller batches.")
+              sys.exit("Batch exceeds 1.5 GiB. Select fewer heroes.")
 
           for hero in found:
               source = source_root / hero
               destination = Path(hero)
 
-              def ignore_links(directory, names):
-                  return [
-                      name for name in names
-                      if (Path(directory) / name).is_symlink()
-                  ]
+              for path in source.rglob("*"):
+                  if path.is_symlink():
+                      continue
 
-              shutil.copytree(
-                  source,
-                  destination,
-                  dirs_exist_ok=True,
-                  ignore=ignore_links
-              )
+                  relative = path.relative_to(source)
+                  target = destination / relative
 
-              for path in destination.rglob("*"):
-                  if path.is_symlink() or not path.is_file():
+                  if path.is_dir():
+                      target.mkdir(parents=True, exist_ok=True)
+                      continue
+
+                  if not path.is_file():
                       continue
 
                   if path.stat().st_size >= max_file:
-                      print("Removing oversized file:", path)
-                      path.unlink()
+                      continue
 
-              print("Copied:", hero)
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copy2(path, target)
+                  print("COPIED:", target)
+
+              print("Finished:", hero)
 
           PY
 
       - name: Commit copied files
         run: |
+          mapfile -t HEROES < /tmp/hero-list.txt
+
           git config user.name "github-actions[bot]"
           git config user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -A -- Edith Esmeralda
+          git add -A -- "${HEROES[@]}"
 
           if ! git diff --cached --quiet; then
-            git commit -m "Copy Edith and Esmeralda folders"
+            git commit -m "Copy selected MLBB hero folders"
             git push
           else
             echo "No changes to commit."
