@@ -1,4 +1,3 @@
-
 name: Mlbb
 
 on:
@@ -13,140 +12,127 @@ on:
 permissions:
   contents: write
 
+# One copy job at a time, so two runs can't fight over the push.
+concurrency:
+  group: mlbb-copy
+  cancel-in-progress: false
+
+env:
+  SOURCE_REPO: https://github.com/injctr/large.git
+  MAX_FILE_BYTES: 104857600     # 100 MiB, GitHub's limit per file
+  MAX_BATCH_BYTES: 1610612736   # 1.5 GiB per run
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   copy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout destination repository
+      # Only download .github, not every hero folder already in the repo.
+      - name: Checkout destination repository (light)
         uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+          filter: blob:none
 
       - name: Validate hero names
         env:
           HERO_INPUT: ${{ inputs.heroes }}
         run: |
-          python - <<'PY'
-          import os
-          import re
-          import sys
-          from pathlib import Path
+          read -ra heroes <<< "$HERO_INPUT"
 
-          heroes = os.environ["HERO_INPUT"].split()
+          if [ "${#heroes[@]}" -eq 0 ]; then
+            echo "::error::Enter at least one hero name."
+            exit 1
+          fi
 
-          if not heroes:
-              sys.exit("Enter at least one hero name.")
+          if [ -n "$(printf '%s\n' "${heroes[@]}" | sort | uniq -d)" ]; then
+            echo "::error::Remove duplicate hero names."
+            exit 1
+          fi
 
-          if len(heroes) != len(set(heroes)):
-              sys.exit("Remove duplicate hero names.")
+          # must start with a letter or number, so names like ".." are rejected
+          pattern="^[A-Za-z0-9][A-Za-z0-9.'-]*$"
+          for hero in "${heroes[@]}"; do
+            if ! [[ "$hero" =~ $pattern ]]; then
+              echo "::error::Invalid hero folder name: $hero"
+              exit 1
+            fi
+          done
 
-          for hero in heroes:
-              if not re.fullmatch(r"[A-Za-z0-9.'-]+", hero):
-                  sys.exit(f"Invalid hero folder name: {hero}")
+          printf '%s\n' "${heroes[@]}" > /tmp/hero-list.txt
+          echo "Selected heroes: ${heroes[*]}"
 
-          Path("/tmp/hero-list.txt").write_text(
-              "\n".join(heroes) + "\n"
-          )
-
-          print("Selected heroes:", ", ".join(heroes))
-          PY
-
-      - name: Get selected source folders
+      - name: Fetch and copy selected folders
         run: |
-          git clone \
-            --depth 1 \
-            --filter=blob:none \
-            --no-checkout \
-            https://github.com/injctr/large.git \
-            source-repo
+          mapfile -t heroes < /tmp/hero-list.txt
 
-          git -C source-repo sparse-checkout init --cone
+          # blobless + sparse clone: only the chosen folders get downloaded
+          git clone --depth 1 --filter=blob:none --sparse "$SOURCE_REPO" source-repo
+          git -C source-repo sparse-checkout set "${heroes[@]}"
 
-          git -C source-repo sparse-checkout set \
-            --stdin < /tmp/hero-list.txt
+          found=()
+          total=0
+          for hero in "${heroes[@]}"; do
+            if [ ! -d "source-repo/$hero" ]; then
+              echo "NOT FOUND: $hero"
+              continue
+            fi
 
-          git -C source-repo checkout
+            find "source-repo/$hero" -type f -size +"$((MAX_FILE_BYTES - 1))"c \
+              -printf 'WILL SKIP oversized file: %p\n'
 
-      - name: Check sizes and copy folders
-        run: |
-          python - <<'PY'
-          import shutil
-          import sys
-          from pathlib import Path
+            read -r count size < <(find "source-repo/$hero" -type f \
+              -size -"$MAX_FILE_BYTES"c -printf '%s\n' \
+              | awk '{ c++; s += $1 } END { print c + 0, s + 0 }')
 
-          heroes = Path("/tmp/hero-list.txt").read_text().splitlines()
-          source_root = Path("source-repo")
-          max_file = 100 * 1024 * 1024
-          max_batch = int(1.5 * 1024 * 1024 * 1024)
+            if [ "$count" -eq 0 ]; then
+              echo "NOTHING TO COPY: $hero"
+              continue
+            fi
 
-          found = []
-          total = 0
+            found+=("$hero")
+            total=$((total + size))
+          done
 
-          for hero in heroes:
-              folder = source_root / hero
+          if [ "${#found[@]}" -eq 0 ]; then
+            echo "::error::No matching hero folders were found."
+            exit 1
+          fi
 
-              if not folder.is_dir():
-                  print("NOT FOUND:", hero)
-                  continue
+          echo "Eligible batch size: $((total / 1048576)) MiB"
+          if [ "$total" -gt "$MAX_BATCH_BYTES" ]; then
+            echo "::error::Batch exceeds 1.5 GiB. Select fewer heroes."
+            exit 1
+          fi
 
-              found.append(hero)
+          printf '%s\n' "${found[@]}" > /tmp/found-list.txt
 
-              for path in folder.rglob("*"):
-                  if path.is_symlink() or not path.is_file():
-                      continue
-
-                  size = path.stat().st_size
-
-                  if size >= max_file:
-                      print("WILL SKIP oversized file:", path)
-                  else:
-                      total += size
-
-          if not found:
-              sys.exit("No matching hero folders were found.")
-
-          print(f"Eligible batch size: {total / (1024**3):.2f} GiB")
-
-          if total > max_batch:
-              sys.exit("Batch exceeds 1.5 GiB. Select fewer heroes.")
-
-          for hero in found:
-              source = source_root / hero
-              destination = Path(hero)
-
-              for path in source.rglob("*"):
-                  if path.is_symlink():
-                      continue
-
-                  relative = path.relative_to(source)
-                  target = destination / relative
-
-                  if path.is_dir():
-                      target.mkdir(parents=True, exist_ok=True)
-                      continue
-
-                  if not path.is_file():
-                      continue
-
-                  if path.stat().st_size >= max_file:
-                      continue
-
-                  target.parent.mkdir(parents=True, exist_ok=True)
-                  shutil.copy2(path, target)
-                  print("COPIED:", target)
-
-              print("Finished:", hero)
-
-          PY
+          # a tar pipe is much faster than copying file by file; -type f skips
+          # symlinks and the size filter skips oversized files
+          for hero in "${found[@]}"; do
+            (cd source-repo && find "$hero" -type f -size -"$MAX_FILE_BYTES"c -print0 \
+              | tar --null -T - -cf -) | tar -xf -
+            echo "Finished: $hero"
+          done
 
       - name: Commit copied files
         run: |
-          mapfile -t HEROES < /tmp/hero-list.txt
+          mapfile -t heroes < /tmp/found-list.txt
 
-          git config user.name "github-actions[bot]"
-          git config user.email \
-            "41898282+github-actions[bot]@users.noreply.github.com"
+          # commits are made as the repo owner, so you are the only contributor
+          git config user.name "${{ github.repository_owner }}"
+          git config user.email "${{ github.repository_owner_id }}+${{ github.repository_owner }}@users.noreply.github.com"
 
-          git add -A -- "${HEROES[@]}"
+          # skip slow compression, these files are mostly already compressed
+          git config core.compression 0
+          git config pack.compression 0
+          git config pack.window 0
+
+          git add --sparse -A -- "${heroes[@]}"
 
           if ! git diff --cached --quiet; then
             git commit -m "Copy selected MLBB hero folders"
