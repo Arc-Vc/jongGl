@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       heroes:
-        description: "Hero folder names separated by spaces"
+        description: "Hero folder names separated by commas"
         required: true
-        default: "Alucard Alpha"
+        default: "Alucard, Alpha"
         type: string
 
 permissions:
@@ -42,20 +42,29 @@ jobs:
         env:
           HERO_INPUT: ${{ inputs.heroes }}
         run: |
-          read -ra heroes <<< "$HERO_INPUT"
+          IFS=',' read -ra raw_heroes <<< "$HERO_INPUT"
+          heroes=()
 
-          if [ "${#heroes[@]}" -eq 0 ]; then
-            echo "::error::Enter at least one hero name."
-            exit 1
-          fi
+          for raw_hero in "${raw_heroes[@]}"; do
+            hero="${raw_hero#"${raw_hero%%[![:space:]]*}"}"
+            hero="${hero%"${hero##*[![:space:]]}"}"
+
+            if [ -z "$hero" ]; then
+              echo "::error::Enter valid hero names separated by commas."
+              exit 1
+            fi
+
+            heroes+=("$hero")
+          done
 
           if [ -n "$(printf '%s\n' "${heroes[@]}" | sort | uniq -d)" ]; then
             echo "::error::Remove duplicate hero names."
             exit 1
           fi
 
-          # must start with a letter or number, so names like ".." are rejected
-          pattern="^[A-Za-z0-9][A-Za-z0-9.'-]*$"
+          # Allows spaces inside folder names while rejecting path separators.
+          pattern="^[A-Za-z0-9][A-Za-z0-9 .'\\-]*$"
+
           for hero in "${heroes[@]}"; do
             if ! [[ "$hero" =~ $pattern ]]; then
               echo "::error::Invalid hero folder name: $hero"
@@ -111,8 +120,7 @@ jobs:
 
           printf '%s\n' "${found[@]}" > /tmp/found-list.txt
 
-          # a tar pipe is much faster than copying file by file; -type f skips
-          # symlinks and the size filter skips oversized files
+          # A tar pipe copies files in batches; -type f skips symlinks.
           for hero in "${found[@]}"; do
             (cd source-repo && find "$hero" -type f -size -"$MAX_FILE_BYTES"c -print0 \
               | tar --null -T - -cf -) | tar -xf -
@@ -123,11 +131,9 @@ jobs:
         run: |
           mapfile -t heroes < /tmp/found-list.txt
 
-          # commits are made as the repo owner, so you are the only contributor
           git config user.name "${{ github.repository_owner }}"
           git config user.email "${{ github.repository_owner_id }}+${{ github.repository_owner }}@users.noreply.github.com"
 
-          # skip slow compression, these files are mostly already compressed
           git config core.compression 0
           git config pack.compression 0
           git config pack.window 0
